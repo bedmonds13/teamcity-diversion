@@ -115,28 +115,27 @@ public class DiversionCommandExecutor {
     }
 
     /**
-     * Get the current commit ID from the branch head (remote)
-     * Uses 'dv branch' to get the latest commit on the remote branch,
-     * not the local workspace commit
+     * Get the current commit ID from the branch head.
+     * Uses 'dv log -n 1' rather than 'dv branch' because 'dv branch' reflects
+     * the locally checked-out HEAD, which lags behind new remote commits.
+     * 'dv log -n 1' returns the actual latest commit on the current branch.
      */
     @NotNull
     public String getCurrentCommitId() throws VcsException {
-        // Use 'dv branch' to get the branch head commit (remote)
-        // Output format:
-        // branch main (dv.branch.1)
-        // commit dv.commit.15
-        String output = execute("branch");
-        String[] lines = output.trim().split("\\r?\\n");
-
-        // Find the line starting with "commit "
-        for (String line : lines) {
+        String output = getLog(1);
+        for (String line : output.trim().split("\\r?\\n")) {
             String trimmed = line.trim();
             if (trimmed.startsWith("commit ")) {
-                return trimmed.substring(7).trim(); // Extract "dv.commit.15" from "commit dv.commit.15"
+                // Extract commit ID, strip any trailing branch annotation e.g. "(dv.branch.6)"
+                String part = trimmed.substring(7).trim();
+                int parenIdx = part.indexOf('(');
+                if (parenIdx > 0) {
+                    part = part.substring(0, parenIdx).trim();
+                }
+                return part;
             }
         }
-
-        throw new VcsException("Could not parse commit ID from 'dv branch' output: " + output);
+        throw new VcsException("Could not parse commit ID from 'dv log -n 1' output: " + output);
     }
 
     /**

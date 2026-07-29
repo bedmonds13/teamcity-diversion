@@ -35,11 +35,16 @@ public class DiversionCollectChangesPolicy implements CollectChangesBetweenRepos
         String fromVersion = fromState.getBranchRevisions().values().iterator().next();
         String toVersion = toState.getBranchRevisions().values().iterator().next();
 
+        LOG.warn("Diversion.collectChanges: fromVersion=" + fromVersion + " toVersion=" + toVersion);
+
         // Parse commit numbers
         int fromCommitNum = DiversionLogParser.extractCommitNumber(fromVersion);
         int toCommitNum = DiversionLogParser.extractCommitNumber(toVersion);
 
+        LOG.warn("Diversion.collectChanges: fromCommitNum=" + fromCommitNum + " toCommitNum=" + toCommitNum);
+
         if (fromCommitNum >= toCommitNum) {
+            LOG.warn("Diversion.collectChanges: no new commits, returning empty");
             return Collections.emptyList(); // No new commits
         }
 
@@ -106,7 +111,9 @@ public class DiversionCollectChangesPolicy implements CollectChangesBetweenRepos
     @NotNull
     @Override
     public RepositoryStateData getCurrentState(@NotNull VcsRoot root) throws VcsException {
+        LOG.warn("Diversion.getCurrentState: polling for current state");
         String currentVersion = myVcs.getCurrentVersion(root);
+        LOG.warn("Diversion.getCurrentState: currentVersion=" + currentVersion);
         return RepositoryStateData.createSingleVersionState(currentVersion);
     }
 

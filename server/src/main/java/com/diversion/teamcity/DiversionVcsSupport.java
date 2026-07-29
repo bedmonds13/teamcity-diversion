@@ -55,10 +55,16 @@ public class DiversionVcsSupport extends ServerVcsSupport implements BuildPatchB
     @NotNull
     @Override
     public String getCurrentVersion(@NotNull VcsRoot root) throws VcsException {
-        LOG.info("Getting current version for repository: " + root.getProperty(DiversionSettings.REPOSITORY_ID));
+        String repoId = root.getProperty(DiversionSettings.REPOSITORY_ID);
+        String branchName = root.getProperty(DiversionSettings.BRANCH_NAME, DiversionSettings.DEFAULT_BRANCH_NAME);
+        LOG.warn("Diversion.getCurrentVersion: repo=" + repoId + " branch=" + branchName);
         DiversionCommandExecutor executor = createExecutor(root);
+        LOG.warn("Diversion.getCurrentVersion: running dv update");
+        executor.update();
+        LOG.warn("Diversion.getCurrentVersion: running dv checkout " + branchName);
+        executor.checkout(branchName, true);
         String version = executor.getCurrentCommitId();
-        LOG.info("Current version: " + version);
+        LOG.warn("Diversion.getCurrentVersion: result=" + version);
         return version;
     }
 
@@ -167,22 +173,24 @@ public class DiversionVcsSupport extends ServerVcsSupport implements BuildPatchB
                                          @NotNull PatchBuilder builder,
                                          @NotNull CheckoutRules checkoutRules) throws VcsException {
         DiversionCommandExecutor executor = createExecutor(root);
+        String workingDir = root.getProperty(DiversionSettings.WORKING_DIRECTORY);
 
-        // Process each modification
+        // Process each modification - checkout once per commit, not once per file
         for (ModificationData mod : changes) {
+            executor.checkout(mod.getVersion(), true);
+
             for (VcsChange change : mod.getChanges()) {
                 String filePath = change.getRelativeFileName();
 
                 switch (change.getType()) {
                     case ADDED:
-                        // Checkout toVersion and get file content
-                        executor.checkout(mod.getVersion(), true);
-                        String workingDir = root.getProperty(DiversionSettings.WORKING_DIRECTORY);
                         File addedFile = new File(workingDir, filePath);
+                        if (!addedFile.isFile()) {
+                            LOG.warn("Diversion.buildIncrementalPatch: skipping non-file ADDED entry: " + filePath);
+                            break;
+                        }
                         try (java.io.FileInputStream fis = new java.io.FileInputStream(addedFile)) {
-                            // Use relative File object for the patch
-                            File relativeAddedFile = new File(filePath);
-                            builder.createBinaryFile(relativeAddedFile, filePath, fis, addedFile.length());
+                            builder.createBinaryFile(new File(filePath), filePath, fis, addedFile.length());
                         } catch (Exception e) {
                             throw new VcsException("Failed to add file: " + filePath, e);
                         }
@@ -190,23 +198,20 @@ public class DiversionVcsSupport extends ServerVcsSupport implements BuildPatchB
 
                     case REMOVED:
                         try {
-                            // Use relative File object for the patch
-                            File relativeRemovedFile = new File(filePath);
-                            builder.deleteFile(relativeRemovedFile, true);
+                            builder.deleteFile(new File(filePath), true);
                         } catch (Exception e) {
                             throw new VcsException("Failed to delete file: " + filePath, e);
                         }
                         break;
 
                     case CHANGED:
-                        // Checkout toVersion and get file content
-                        executor.checkout(mod.getVersion(), true);
-                        String workDir = root.getProperty(DiversionSettings.WORKING_DIRECTORY);
-                        File changedFile = new File(workDir, filePath);
+                        File changedFile = new File(workingDir, filePath);
+                        if (!changedFile.isFile()) {
+                            LOG.warn("Diversion.buildIncrementalPatch: skipping non-file CHANGED entry: " + filePath);
+                            break;
+                        }
                         try (java.io.FileInputStream fis = new java.io.FileInputStream(changedFile)) {
-                            // Use relative File object for the patch
-                            File relativeChangedFile = new File(filePath);
-                            builder.changeOrCreateBinaryFile(relativeChangedFile, filePath, fis, changedFile.length());
+                            builder.changeOrCreateBinaryFile(new File(filePath), filePath, fis, changedFile.length());
                         } catch (Exception e) {
                             throw new VcsException("Failed to change file: " + filePath, e);
                         }
