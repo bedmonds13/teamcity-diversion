@@ -115,10 +115,11 @@ public class DiversionCommandExecutor {
     }
 
     /**
-     * Get the current commit ID from the branch head.
-     * Uses 'dv log -n 1' rather than 'dv branch' because 'dv branch' reflects
-     * the locally checked-out HEAD, which lags behind new remote commits.
-     * 'dv log -n 1' returns the actual latest commit on the current branch.
+     * Get the commit ID at the workspace's current HEAD.
+     *
+     * <p>Reads the workspace, not the server, so callers must check out the branch they
+     * care about first. ('dv branch' does report every branch's head server-side without
+     * touching the workspace, but keys them by branch name only.)
      */
     @NotNull
     public String getCurrentCommitId() throws VcsException {

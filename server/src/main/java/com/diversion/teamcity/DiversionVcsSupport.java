@@ -57,14 +57,15 @@ public class DiversionVcsSupport extends ServerVcsSupport implements BuildPatchB
     public String getCurrentVersion(@NotNull VcsRoot root) throws VcsException {
         String repoId = root.getProperty(DiversionSettings.REPOSITORY_ID);
         String branchName = root.getProperty(DiversionSettings.BRANCH_NAME, DiversionSettings.DEFAULT_BRANCH_NAME);
-        LOG.warn("Diversion.getCurrentVersion: repo=" + repoId + " branch=" + branchName);
+        LOG.info("Getting current version for repository " + repoId + " branch " + branchName);
         DiversionCommandExecutor executor = createExecutor(root);
-        LOG.warn("Diversion.getCurrentVersion: running dv update");
-        executor.update();
-        LOG.warn("Diversion.getCurrentVersion: running dv checkout " + branchName);
+        // Align the workspace to the configured branch: getCurrentCommitId reads the
+        // workspace HEAD, so without this it reports some other branch's head. Checking
+        // out a branch name already syncs to that branch's tip, so no update() is needed
+        // -- and an update() here would sync whichever branch we are leaving, every poll.
         executor.checkout(branchName, true);
         String version = executor.getCurrentCommitId();
-        LOG.warn("Diversion.getCurrentVersion: result=" + version);
+        LOG.info("Current version: " + version);
         return version;
     }
 
