@@ -19,6 +19,9 @@ public class DiversionCommandExecutor {
 
     private static final Logger LOG = Logger.getInstance(DiversionCommandExecutor.class.getName());
 
+    private static final String BRANCH_LINE_PREFIX = "branch ";
+    private static final String COMMIT_LINE_PREFIX = "commit ";
+
     private final String dvExecutablePath;
     private final File workingDirectory;
 
@@ -115,28 +118,63 @@ public class DiversionCommandExecutor {
     }
 
     /**
-     * Get the commit ID at the workspace's current HEAD.
+     * Get the head commit of a named branch.
      *
-     * <p>Reads the workspace, not the server, so callers must check out the branch they
-     * care about first. ('dv branch' does report every branch's head server-side without
-     * touching the workspace, but keys them by branch name only.)
+     * <p>Reads the server-side branch listing, so it neither requires nor changes workspace
+     * state. Callers must not check anything out to make this accurate.
+     *
+     * @param branchName Branch to look up, matched exactly as configured on the VCS root
+     * @throws VcsException if the repository has no branch with that name
      */
     @NotNull
-    public String getCurrentCommitId() throws VcsException {
-        String output = getLog(1);
-        for (String line : output.trim().split("\\r?\\n")) {
-            String trimmed = line.trim();
-            if (trimmed.startsWith("commit ")) {
-                // Extract commit ID, strip any trailing branch annotation e.g. "(dv.branch.6)"
-                String part = trimmed.substring(7).trim();
-                int parenIdx = part.indexOf('(');
-                if (parenIdx > 0) {
-                    part = part.substring(0, parenIdx).trim();
+    public String getBranchHead(@NotNull String branchName) throws VcsException {
+        return parseBranchHead(execute("branch"), branchName);
+    }
+
+    /**
+     * Extract one branch's head commit from 'dv branch' output.
+     *
+     * <p>The listing is a block per branch, ordered by ascending branch id:
+     * <pre>
+     * branch main (dv.branch.1)
+     * commit dv.commit.201
+     *
+     * branch Development (dv.branch.6)
+     * commit dv.commit.303
+     * </pre>
+     *
+     * <p>Matching is exact and case-sensitive. Falling back to a near-miss branch would
+     * silently poll the wrong branch, which is the failure this method exists to prevent.
+     */
+    @NotNull
+    static String parseBranchHead(@NotNull String output, @NotNull String branchName) throws VcsException {
+        List<String> found = new ArrayList<>();
+        String currentBranch = null;
+
+        for (String rawLine : output.split("\\r?\\n")) {
+            String line = rawLine.trim();
+            if (line.startsWith(BRANCH_LINE_PREFIX)) {
+                currentBranch = stripTrailingId(line.substring(BRANCH_LINE_PREFIX.length()));
+                found.add(currentBranch);
+            } else if (line.startsWith(COMMIT_LINE_PREFIX) && currentBranch != null) {
+                if (currentBranch.equals(branchName)) {
+                    return stripTrailingId(line.substring(COMMIT_LINE_PREFIX.length()));
                 }
-                return part;
+                currentBranch = null;
             }
         }
-        throw new VcsException("Could not parse commit ID from 'dv log -n 1' output: " + output);
+
+        throw new VcsException("Repository has no branch named '" + branchName
+                              + "'. Branches found: " + found);
+    }
+
+    /** Drop a trailing parenthesised id, e.g. "Development (dv.branch.6)" -> "Development". */
+    @NotNull
+    private static String stripTrailingId(@NotNull String value) {
+        String trimmed = value.trim();
+        // lastIndexOf so a branch name containing '(' keeps it
+        int paren = trimmed.lastIndexOf('(');
+        return paren > 0 ? trimmed.substring(0, paren).trim() : trimmed;
     }
 
     /**

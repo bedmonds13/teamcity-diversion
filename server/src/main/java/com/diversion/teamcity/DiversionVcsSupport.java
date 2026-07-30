@@ -58,13 +58,10 @@ public class DiversionVcsSupport extends ServerVcsSupport implements BuildPatchB
         String repoId = root.getProperty(DiversionSettings.REPOSITORY_ID);
         String branchName = root.getProperty(DiversionSettings.BRANCH_NAME, DiversionSettings.DEFAULT_BRANCH_NAME);
         LOG.info("Getting current version for repository " + repoId + " branch " + branchName);
-        DiversionCommandExecutor executor = createExecutor(root);
-        // Align the workspace to the configured branch: getCurrentCommitId reads the
-        // workspace HEAD, so without this it reports some other branch's head. Checking
-        // out a branch name already syncs to that branch's tip, so no update() is needed
-        // -- and an update() here would sync whichever branch we are leaving, every poll.
-        executor.checkout(branchName, true);
-        String version = executor.getCurrentCommitId();
+        // Runs on TeamCity's polling interval, so it must not touch the workspace: a
+        // checkout here discards an in-progress build's uncommitted output and moves the
+        // workspace off the revision that build pinned.
+        String version = createExecutor(root).getBranchHead(branchName);
         LOG.info("Current version: " + version);
         return version;
     }
