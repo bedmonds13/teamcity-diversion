@@ -21,6 +21,7 @@ public class DiversionCommandExecutor {
 
     private static final String BRANCH_LINE_PREFIX = "branch ";
     private static final String COMMIT_LINE_PREFIX = "commit ";
+    private static final int MAX_REPORTED_OUTPUT = 500;
 
     private final String dvExecutablePath;
     private final File workingDirectory;
@@ -164,8 +165,22 @@ public class DiversionCommandExecutor {
             }
         }
 
+        if (found.isEmpty()) {
+            // 'dv' exits 0 when it is logged out, printing the reason instead of a listing,
+            // so an empty result means "could not read branches", not "repository is empty".
+            throw new VcsException("Could not read a branch listing from 'dv branch'. Check that the"
+                                   + " VCS root's working directory is a Diversion workspace and that"
+                                   + " dv is logged in as the account running TeamCity. Output: "
+                                   + abbreviate(output.trim()));
+        }
         throw new VcsException("Repository has no branch named '" + branchName
                               + "'. Branches found: " + found);
+    }
+
+    @NotNull
+    private static String abbreviate(@NotNull String value) {
+        return value.length() <= MAX_REPORTED_OUTPUT ? value
+               : value.substring(0, MAX_REPORTED_OUTPUT) + "... (truncated)";
     }
 
     /** Drop a trailing parenthesised id, e.g. "Development (dv.branch.6)" -> "Development". */
