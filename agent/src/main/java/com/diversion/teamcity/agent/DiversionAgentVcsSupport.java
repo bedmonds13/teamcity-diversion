@@ -79,7 +79,11 @@ public class DiversionAgentVcsSupport extends AgentVcsSupport implements UpdateB
         logger.message("Diversion: Checkout directory: " + checkoutDirectory.getAbsolutePath());
         logger.message("Diversion: Clean checkout: " + cleanCheckout);
 
-        File dvDir = new File(checkoutDirectory, ".dv");
+        // The workspace marker is ".diversion". It was ".dv" here, which never matches, so
+        // every non-clean build fell through to the re-clone path and failed: the running
+        // agent holds ".diversion" open, the delete fails, and cloning into the surviving
+        // directory exits 3.
+        File dvDir = new File(checkoutDirectory, ".diversion");
         boolean workspaceExists = dvDir.exists() && dvDir.isDirectory();
 
         if (cleanCheckout) {
@@ -88,8 +92,41 @@ public class DiversionAgentVcsSupport extends AgentVcsSupport implements UpdateB
 
             // Clean directory if it exists
             if (checkoutDirectory.exists()) {
+                // The registration lives in the agent's own config keyed by path, so it
+                // outlives ".diversion" on disk: the agent keeps watching the directory and
+                // the delete fails even when the directory is empty. Always try to release
+                // it, and do not treat "nothing registered here" as an error.
+                try {
+                    logger.message("Diversion: Releasing any workspace registered at the checkout directory");
+                    runDvCommand(checkoutDirectory, logger, "unregister", "-f");
+                } catch (VcsException e) {
+                    logger.message("Diversion: Nothing to unregister here, continuing");
+                }
+
                 logger.message("Diversion: Cleaning existing directory");
                 deleteDirectory(checkoutDirectory, logger);
+
+                // The watch handle is released asynchronously, so a delete immediately after
+                // unregister can still lose the race. Give it a moment and retry.
+                for (int attempt = 0; attempt < 3 && checkoutDirectory.exists(); attempt++) {
+                    try {
+                        Thread.sleep(1000);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        break;
+                    }
+                    logger.message("Diversion: Directory still present, retrying delete");
+                    deleteDirectory(checkoutDirectory, logger);
+                }
+            }
+
+            // deleteDirectory only warns on failure. Cloning into a directory that survived
+            // it fails with exit code 3 and, because TeamCity forces a clean checkout after a
+            // failed checkout, wedges the build configuration. Stop here with a real reason.
+            if (checkoutDirectory.exists()) {
+                throw new VcsException(
+                    "Failed to remove checkout directory " + checkoutDirectory.getAbsolutePath()
+                    + " for clean checkout. Something still holds files in it open.");
             }
 
             // Ensure parent directory exists

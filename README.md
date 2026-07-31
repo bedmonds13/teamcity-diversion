@@ -2,13 +2,20 @@
 
 TeamCity VCS plugin for [Diversion](https://www.diversion.dev) version control system.
 
+> **This is a fork of [midgen/teamcity-diversion](https://github.com/midgen/teamcity-diversion).**
+> It fixes polling on non-default branches: upstream resolves the head of the repository's
+> default branch no matter which branch a VCS root is configured for, so pushes to any other
+> branch never trigger a build. If you are monitoring a branch other than your repository's
+> default, you need this build rather than upstream.
+
 ## Summary
 
 This is a very rough, basic working version of a Diversion VCS plugin for TeamCity. It does give you first class VCS functionality in TeamCity for Diversion, rather than relying on PowerShell scripts, with change tracking, change details withing TeamCity, patches, server and agent side checkout.
 
 The plugin does not use the Diversion API, it just wraps the dv CLI client so you will need that configured and logged in on your server and build agents.
 
-Currently only tested on Windows on a single main branch.
+Currently only tested on Windows. Polling has been validated against both a default and a
+non-default branch.
 
 ## Current Status
 
@@ -17,7 +24,7 @@ Currently only tested on Windows on a single main branch.
 - ✅ **File-Level Changes**: Shows actual changed files with status (added/modified/deleted)
 - ✅ **Server-Side Checkout**: Build patches on TeamCity server (requires working directory)
 - ✅ **Agent-Side Checkout**: Full support for `dv` commands on agents
-- ✅ **Branch Monitoring**: Track specific branches for changes
+- ✅ **Branch Monitoring**: Track specific branches for changes, including non-default branches
 - ✅ **Build Triggering**: New commits automatically trigger configured builds
 - ✅ **Version Display**: Shows commit numbers in TeamCity UI
 
@@ -97,6 +104,21 @@ Both server-side and agent-side checkout are supported. Choose the mode that bes
 - Subsequent checkouts use `dv update` and `dv checkout` for fast incremental updates
 - Requires Diversion CLI installed and authenticated on all agents
 - Best for distributed teams where agents have full CLI access
+
+> **The VCS root's Working Directory must be a dedicated Diversion workspace.**
+> The poll path runs `dv checkout --discard-changes` against it, so any uncommitted work
+> there is destroyed. In particular, never point it at a build's checkout directory: with
+> server-side checkout TeamCity wipes that directory on every clean checkout, and Diversion
+> records the wipe as a mass deletion. One observed setup reached 21,068 pending deletions
+> this way. If your build steps run `dv` themselves, set the build to
+> "Do not checkout files automatically" and let the VCS root serve only change detection.
+
+> **Agent-side checkout needs no manual cleanup.** Upstream, a clean checkout deleted the
+> checkout directory and re-cloned, but the delete failed while the workspace was still
+> registered, and the clone then exited 3. Since TeamCity forces a clean checkout after a
+> failed one, a single failure wedged the build configuration permanently. This fork
+> releases the workspace with `dv unregister` before deleting, and aborts with a real
+> message instead of cloning into a directory that survived deletion.
 
 ## Project Structure
 
